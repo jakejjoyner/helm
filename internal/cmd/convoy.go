@@ -489,13 +489,18 @@ func bdDepListRawIDs(dir, issueID, direction, depType string) ([]string, error) 
 	// Determine query columns based on direction.
 	// "down": issueID depends on targets → SELECT depends_on_id WHERE issue_id = ?
 	// "up":   issueID is depended on → SELECT issue_id WHERE depends_on_id = ?
-	var selectCol, whereCol string
+	// beads 1.0.5 split the polymorphic depends_on_id into three typed columns;
+	// COALESCE reconstructs the original single-column value (endurance fork, ADR-069).
+	const depTarget = "COALESCE(depends_on_issue_id, depends_on_wisp_id, depends_on_external)"
+	var selectExpr, whereExpr, resultKey string
 	if direction == "up" {
-		selectCol = "issue_id"
-		whereCol = "depends_on_id"
+		selectExpr = "issue_id"
+		resultKey = "issue_id"
+		whereExpr = depTarget
 	} else {
-		selectCol = "depends_on_id"
-		whereCol = "issue_id"
+		selectExpr = depTarget + " AS depends_on_id"
+		resultKey = "depends_on_id"
+		whereExpr = "issue_id"
 	}
 
 	// Build SQL query. Bead IDs are system-generated alphanumeric strings
@@ -504,7 +509,7 @@ func bdDepListRawIDs(dir, issueID, direction, depType string) ([]string, error) 
 		return nil, fmt.Errorf("invalid bead ID: %q", issueID)
 	}
 
-	query := fmt.Sprintf("SELECT %s FROM dependencies WHERE %s = '%s'", selectCol, whereCol, issueID)
+	query := fmt.Sprintf("SELECT %s FROM dependencies WHERE %s = '%s'", selectExpr, whereExpr, issueID)
 	if depType != "" {
 		if !isValidBeadID(depType) {
 			return nil, fmt.Errorf("invalid dep type: %q", depType)
@@ -526,7 +531,7 @@ func bdDepListRawIDs(dir, issueID, direction, depType string) ([]string, error) 
 	seen := make(map[string]bool, len(rows))
 	var ids []string
 	for _, row := range rows {
-		rawID := row[selectCol]
+		rawID := row[resultKey]
 		id := beads.ExtractIssueID(rawID)
 		if id != "" && !seen[id] {
 			seen[id] = true

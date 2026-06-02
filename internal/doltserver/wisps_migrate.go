@@ -257,7 +257,7 @@ func copyAuxiliaryData(workDir string, result *MigrateWispsResult) error {
 
 	// Copy dependencies
 	if err := bdSQL(workDir,
-		"INSERT IGNORE INTO wisp_dependencies (issue_id, depends_on_id, type, created_at, created_by, metadata, thread_id) SELECT d.issue_id, d.depends_on_id, d.type, d.created_at, d.created_by, d.metadata, d.thread_id FROM dependencies d INNER JOIN wisps w ON d.issue_id = w.id"); err != nil {
+		"INSERT IGNORE INTO wisp_dependencies (issue_id, depends_on_issue_id, depends_on_wisp_id, depends_on_external, type, created_at, created_by, metadata, thread_id) SELECT d.issue_id, d.depends_on_issue_id, d.depends_on_wisp_id, d.depends_on_external, d.type, d.created_at, d.created_by, d.metadata, d.thread_id FROM dependencies d INNER JOIN wisps w ON d.issue_id = w.id"); err != nil {
 		if !strings.Contains(err.Error(), "nothing") {
 			return fmt.Errorf("copying dependencies: %w", err)
 		}
