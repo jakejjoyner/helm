@@ -25,6 +25,26 @@ var (
 	reaperJSON     bool
 )
 
+// reaperArmed reports whether the reaper's destructive operations are explicitly
+// armed. Helm fork hard-brake (ADR-070): reap/purge/auto-close/run refuse to
+// mutate unless GT_REAPER_ARMED is set, regardless of how a reaper dog was
+// dispatched. This re-establishes the containment brake that the dolt 2.1.0 /
+// beads 1.0.5 upgrade removed (the scan-time schema skew used to hard-block reaps).
+func reaperArmed() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("GT_REAPER_ARMED")))
+	return v == "1" || v == "true" || v == "yes"
+}
+
+// requireReaperArmed gates a destructive reaper subcommand. Dry-run is always
+// allowed (preview only); otherwise the operation refuses unless armed.
+func requireReaperArmed(op string) error {
+	if reaperDryRun || reaperArmed() {
+		return nil
+	}
+	return fmt.Errorf("reaper %s refused: disarmed (Helm fork hard-brake, ADR-070); "+
+		"set GT_REAPER_ARMED=1 to arm deliberately, or use --dry-run to preview", op)
+}
+
 func reaperDatabaseNames() []string {
 	if reaperDB == "" {
 		return reaper.DiscoverDatabases(reaperHost, reaperPort)
@@ -196,6 +216,9 @@ all databases on the Dolt server and reaps each one.
 
 Returns the count of reaped wisps. Use --dry-run to preview.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireReaperArmed("reap"); err != nil {
+			return err
+		}
 		maxAge, err := time.ParseDuration(reaperMaxAge)
 		if err != nil {
 			return fmt.Errorf("invalid --max-age: %w", err)
@@ -279,6 +302,9 @@ all databases on the Dolt server and purges each one.
 
 Returns counts of purged rows. Use --dry-run to preview.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireReaperArmed("purge"); err != nil {
+			return err
+		}
 		purgeAge, err := time.ParseDuration(reaperPurgeAge)
 		if err != nil {
 			return fmt.Errorf("invalid --purge-age: %w", err)
@@ -365,6 +391,9 @@ auto-discovers all databases on the Dolt server and auto-closes in each one.
 
 Returns the count of closed issues. Use --dry-run to preview.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireReaperArmed("auto-close"); err != nil {
+			return err
+		}
 		staleAge, err := time.ParseDuration(reaperStaleAge)
 		if err != nil {
 			return fmt.Errorf("invalid --stale-age: %w", err)
@@ -444,6 +473,9 @@ var reaperRunCmd = &cobra.Command{
 This is the inline fallback for when Dog dispatch is unavailable.
 Normally the daemon dispatches a Dog to execute the mol-dog-reaper formula.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireReaperArmed("run"); err != nil {
+			return err
+		}
 		databases := reaperDatabaseNames()
 
 		maxAge, err := time.ParseDuration(reaperMaxAge)
